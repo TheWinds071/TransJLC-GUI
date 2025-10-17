@@ -351,7 +351,7 @@ impl JLC {
         let mut result_lines = Vec::new();
         
         // 匹配独立的Dx*格式的正则表达式
-        let aperture_regex = regex::Regex::new(r"(D\d{2,4}\*)").unwrap();
+        let aperture_regex = regex::Regex::new(r"^(D\d{2,4}\*)").unwrap();
         
         for line in lines {
             // 跳过已经包含%ADD或G54D的行
