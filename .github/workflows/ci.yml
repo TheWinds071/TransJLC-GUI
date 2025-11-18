@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.build }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build:
+          - linux
+          - macos
+          - windows
+          - macos-intel
+          - linux-aarch64
+          - linux-i686
+          - windows-i686
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: macos
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - build: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - build: macos-intel
+            os: macos-13
+            target: x86_64-apple-darwin
+          - build: linux-aarch64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - build: linux-i686
+            os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+          - build: windows-i686
+            os: windows-latest
+            target: i686-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version label
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="$(git rev-parse --short=6 HEAD)"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install AArch64 Linux target dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install i686 Linux target dependencies
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.target == 'i686-unknown-linux-gnu' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package archive (Unix)
+        if: ${{ !contains(matrix.target, 'pc-windows') }}
+        id: package_unix
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="TransJLC-${{ steps.version.outputs.value }}-${{ matrix.target }}.tar.xz"
+          staging="TransJLC-${{ steps.version.outputs.value }}-${{ matrix.target }}"
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp "target/${{ matrix.target }}/release/TransJLC" "$staging/"
+          cp README.md "$staging/"
+          cp LICENCE "$staging/"
+          tar -cJf "$artifact" "$staging"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Package archive (Windows)
+        if: ${{ contains(matrix.target, 'pc-windows') }}
+        id: package_windows
+        shell: pwsh
+        run: |
+          $artifact = "TransJLC-${{ steps.version.outputs.value }}-${{ matrix.target }}.zip"
+          $staging = "TransJLC-${{ steps.version.outputs.value }}-${{ matrix.target }}"
+          if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          $binary = Join-Path -Path "target\${{ matrix.target }}\release" -ChildPath "TransJLC.exe"
+          Copy-Item $binary "$staging/"
+          Copy-Item "README.md" "$staging/"
+          Copy-Item "LICENCE" "$staging/"
+          Compress-Archive -Path "$staging/*" -DestinationPath $artifact
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "artifact=$artifact"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TransJLC-${{ steps.version.outputs.value }}-${{ matrix.target }}
+          path: ${{ steps.package_unix.outputs.artifact || steps.package_windows.outputs.artifact }}
+
+  release:
+    name: Release
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: ncipollo/release-action@v1
+        with:
+          artifacts: artifacts/**
+          tag: ${{ github.ref_name }}
+          allowUpdates: true
+          generateReleaseNotes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Publish
+        run: cargo publish --locked --token ${{ secrets.CRATES_IO_TOKEN }}
