@@ -7,7 +7,7 @@
 [![crates.io](https://img.shields.io/crates/v/TransJLC.svg)](https://crates.io/crates/TransJLC)
 [![license](https://img.shields.io/github/license/HalfSweet/TransJLC)](https://github.com/HalfSweet/TransJLC/blob/main/LICENSE)
 [![release](https://img.shields.io/github/v/release/HalfSweet/TransJLC)](https://github.com/HalfSweet/TransJLC/releases)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/HalfSweet/TransJLC/rust.yml)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/HalfSweet/TransJLC/ci.yml)
 
 </div>
 
