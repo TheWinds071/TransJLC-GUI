@@ -12,16 +12,16 @@ description = "TransJLC is a tool for converting Gerber files from other EDAs to
 
 [dependencies]
 anyhow = "1.0"
-chrono = "0.4.38"
-clap = { version = "4.5.16", features = ["derive"] }
+chrono = "0.4.42"
+clap = { version = "4.5.52", features = ["derive"] }
 indicatif = "0.17"
 lazy_static = "1.5.0"
-md-5 = "0.10.5"
+md-5 = "0.10.6"
 rand = "0.8.5"
-regex = "1.10.4"
-rust-embed = { version = "8.4.0", features = ["debug-embed"] }
-tempfile = "3.8.1"
+regex = "1.12.2"
+rust-embed = { version = "8.9.0", features = ["debug-embed"] }
+tempfile = "3.23.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-zip = "2.1.6"
+zip = "2.4.2"
