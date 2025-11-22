@@ -31,5 +31,7 @@ rsa = { version = "0.9", features = ["sha2", "pem"] }
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tiff", "ico"] }
 xmlwriter = "0.1"
+gerber_parser = "0.3"
+gerber-types = "0.6"
 
 [dev-dependencies]

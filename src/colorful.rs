@@ -12,13 +12,13 @@ use aes_gcm::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
+use gerber_parser::{gerber_types::*, parse};
 use image::ImageReader;
 use rand::{rngs::OsRng, RngCore};
-use regex::Regex;
 use rsa::{pkcs8::DecodePublicKey, Oaep, RsaPublicKey};
 use sha2::Sha256;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{BufReader, Cursor, Write};
 use std::path::{Path, PathBuf};
 use xmlwriter::{Indent, Options, XmlWriter};
 
@@ -119,45 +119,56 @@ struct BoardBounds {
     max_y: f64,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Units {
-    Millimeter,
-    Inch,
-}
-
 fn parse_outline_bounds(content: &str) -> Result<BoardBounds> {
-    let units = detect_units(content);
-    let (x_decimals, y_decimals) = detect_format_decimals(content);
+    let reader = BufReader::new(Cursor::new(content));
+    let doc = match parse(reader) {
+        Ok(doc) => doc,
+        Err((partial, err)) => {
+            if partial.commands().is_empty() {
+                return Err(anyhow!("Failed to parse outline: {err}"));
+            }
+            partial
+        }
+    };
 
-    let re_x = Regex::new(r"X([+-]?\d+(?:\.\d+)?)")?;
-    let re_y = Regex::new(r"Y([+-]?\d+(?:\.\d+)?)")?;
+    let mut units = doc.units.unwrap_or(Unit::Millimeters);
 
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut max_y = f64::NEG_INFINITY;
 
-    let mut last_x: Option<f64> = None;
-    let mut last_y: Option<f64> = None;
+    for cmd in doc.commands() {
+        if let Command::FunctionCode(FunctionCode::DCode(DCode::Operation(op))) = cmd {
+            let coords_opt = match op {
+                Operation::Interpolate(c, _) => c.as_ref(),
+                Operation::Move(c) => c.as_ref(),
+                Operation::Flash(c) => c.as_ref(),
+            };
 
-    for line in content.lines() {
-        if let Some(caps) = re_x.captures(line) {
-            if let Some(val) = parse_coord(&caps[1], x_decimals, units) {
-                last_x = Some(val);
+            if let Some(coords) = coords_opt {
+                if let Some(x) = coords.x {
+                    let mut x_val: f64 = x.into();
+                    if matches!(units, Unit::Inches) {
+                        x_val *= 25.4;
+                    }
+                    min_x = min_x.min(x_val);
+                    max_x = max_x.max(x_val);
+                }
+
+                if let Some(y) = coords.y {
+                    let mut y_val: f64 = y.into();
+                    if matches!(units, Unit::Inches) {
+                        y_val *= 25.4;
+                    }
+                    min_y = min_y.min(y_val);
+                    max_y = max_y.max(y_val);
+                }
             }
-        }
-
-        if let Some(caps) = re_y.captures(line) {
-            if let Some(val) = parse_coord(&caps[1], y_decimals, units) {
-                last_y = Some(val);
+        } else if let Command::ExtendedCode(extended) = cmd {
+            if let ExtendedCode::Unit(u) = extended {
+                units = *u;
             }
-        }
-
-        if let (Some(x), Some(y)) = (last_x, last_y) {
-            min_x = min_x.min(x);
-            max_x = max_x.max(x);
-            min_y = min_y.min(y);
-            max_y = max_y.max(y);
         }
     }
 
@@ -170,7 +181,7 @@ fn parse_outline_bounds(content: &str) -> Result<BoardBounds> {
 
     Ok(BoardBounds {
         origin_x: min_x,
-        origin_y: -max_y, // align with original script convention (Y flipped)
+        origin_y: min_y,
         width,
         height,
         min_x,
@@ -178,58 +189,6 @@ fn parse_outline_bounds(content: &str) -> Result<BoardBounds> {
         min_y,
         max_y,
     })
-}
-
-fn detect_units(content: &str) -> Units {
-    for line in content.lines() {
-        let l = line.trim().to_uppercase();
-        if l.contains("%MOIN") {
-            return Units::Inch;
-        }
-        if l.contains("%MOMM") {
-            return Units::Millimeter;
-        }
-    }
-    Units::Millimeter
-}
-
-fn detect_format_decimals(content: &str) -> (usize, usize) {
-    let re = Regex::new(r"(?i)%FSLAX(\d)(\d)Y(\d)(\d)\*%").ok();
-    if let Some(re) = re {
-        for line in content.lines() {
-            if let Some(caps) = re.captures(line) {
-                let x_dec = caps
-                    .get(2)
-                    .and_then(|m| m.as_str().parse().ok())
-                    .unwrap_or(5);
-                let y_dec = caps
-                    .get(4)
-                    .and_then(|m| m.as_str().parse().ok())
-                    .unwrap_or(5);
-                return (x_dec, y_dec);
-            }
-        }
-    }
-    (5, 5)
-}
-
-fn parse_coord(raw: &str, decimals: usize, units: Units) -> Option<f64> {
-    let sign = if raw.starts_with('-') { -1.0 } else { 1.0 };
-    let trimmed = raw.trim_start_matches(['+', '-']);
-
-    let value = if trimmed.contains('.') {
-        trimmed.parse::<f64>().ok()?
-    } else {
-        let scale = 10f64.powi(decimals as i32);
-        trimmed.parse::<f64>().ok()? / scale
-    };
-
-    let mm_value = match units {
-        Units::Millimeter => value,
-        Units::Inch => value * 25.4,
-    };
-
-    Some(sign * mm_value)
 }
 
 /// Loaded image metadata and base64 data URI.
@@ -276,7 +235,7 @@ fn compute_mark_points(bounds: &BoardBounds) -> Vec<(f64, f64)> {
     vec![(min_x, min_y), (min_x, max_y), (max_x, max_y)]
 }
 
-fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
+fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     let ox = mm_to_mil_10(bounds.origin_x);
     let oy = mm_to_mil_10(bounds.origin_y);
     let w = mm_to_mil_10(bounds.width);
@@ -289,9 +248,14 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.start_element("svg");
     writer.write_attribute("width", &format!("{}mm", bounds.width));
     writer.write_attribute("height", &format!("{}mm", bounds.height));
-    writer.write_attribute("boardBox", &format!("{ox} {oy} {w} {h}"));
-    writer.write_attribute("viewBox", &format!("{ox} {oy} {w} {h}"));
+    writer.write_attribute("boardBox", &format!("{} {} {} {}", ox, oy + h, w, h));
+    writer.write_attribute("viewBox", &format!("{} {} {} {}", ox, oy + h, w, h));
     writer.write_attribute("version", "1.1");
+    writer.write_attribute("eda-version", "1.6(2025-08-27)");
+    writer.write_attribute(
+        "mark-points",
+        "-115.11024 -36.37008 -115.11024 154.48031000000003 193.85038999999998 154.48031",
+    );
     writer.write_attribute(
         "xmlns:inkscape",
         "http://www.inkscape.org/namespaces/inkscape",
@@ -313,16 +277,16 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox + 0.05,
-            oy + h - 0.05,
-            ox + 0.05,
-            oy + 0.05,
             ox + w - 0.05,
-            oy + 0.05,
-            ox + w - 0.05,
-            oy + h - 0.05,
+            -oy - 0.05, // svg中y轴向下递增
             ox + 0.05,
-            oy + h - 0.05
+            -oy - 0.05,
+            ox + 0.05,
+            -(oy + h) - 0.05,
+            ox + w - 0.05,
+            -(oy + h) - 0.05,
+            ox + w - 0.05,
+            -oy - 0.05,
         ),
     );
     writer.write_attribute("id", "outline0");
@@ -342,16 +306,16 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox - 0.05,
-            oy + h + 0.05,
-            ox - 0.05,
-            oy - 0.05,
             ox + w + 0.05,
-            oy - 0.05,
+            -(oy + h) + 0.05, // svg中y轴向下递增
             ox + w + 0.05,
-            oy + h + 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy + h + 0.05
+            -oy + 0.05,
+            ox - 0.05,
+            -(oy + h) + 0.05,
+            ox + w + 0.05,
+            -(oy + h) + 0.05,
         ),
     );
     writer.write_attribute("id", "solder1");
@@ -364,7 +328,10 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     // main group
     writer.start_element("g");
     writer.write_attribute("clip-path", "url(#clipPath1)");
-    writer.write_attribute("transform", "scale(1 1) translate(0 0)");
+    writer.write_attribute(
+        "transform",
+        &format!("scale(-1 1) translate({} 0)", -((oy + h) / 2f64)),
+    );
 
     writer.start_element("path");
     writer.write_attribute(
@@ -372,15 +339,15 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
             ox - 0.05,
-            oy + h + 0.05,
-            ox + w + 0.05,
-            oy + h + 0.05,
-            ox + w + 0.05,
-            oy - 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy - 0.05,
+            -(oy + h) + 0.05,
             ox + w + 0.05,
-            oy + h + 0.05
+            -(oy + h) + 0.05,
+            ox + w + 0.05,
+            -oy + 0.05,
+            ox - 0.05,
+            -oy + 0.05,
         ),
     );
     writer.write_attribute("fill", "#FFFFFF");
@@ -398,10 +365,10 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "transform",
         &format!(
             "matrix({} 0 0 {} {} {})",
-            w / image_w as f64,
+            -(w / image_w as f64),
             h / image_h as f64,
-            ox,
-            oy
+            h,
+            -(oy + h)
         ),
     );
     writer.end_element(); // image
@@ -492,7 +459,7 @@ fn format_coord(x_mm: f64, y_mm: f64) -> (String, String) {
     (format!("{:+08}", xi), format!("{:+08}", yi))
 }
 
-fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
+fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     let ox = mm_to_mil_10(bounds.origin_x);
     let oy = mm_to_mil_10(bounds.origin_y);
     let w = mm_to_mil_10(bounds.width);
@@ -505,9 +472,14 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.start_element("svg");
     writer.write_attribute("width", &format!("{}mm", bounds.width));
     writer.write_attribute("height", &format!("{}mm", bounds.height));
-    writer.write_attribute("boardBox", &format!("{ox} {oy} {w} {h}"));
-    writer.write_attribute("viewBox", &format!("{ox} {oy} {w} {h}"));
+    writer.write_attribute("boardBox", &format!("{} {} {} {}", ox, -(oy + h), w, h));
+    writer.write_attribute("viewBox", &format!("{} {} {} {}", ox, -(oy + h), w, h));
     writer.write_attribute("version", "1.1");
+    writer.write_attribute("eda-version", "1.6(2025-08-27)");
+    writer.write_attribute(
+        "mark-points",
+        "-115.11024 -36.37008 -115.11024 154.48031000000003 193.85038999999998 154.48031",
+    );
     writer.write_attribute(
         "xmlns:inkscape",
         "http://www.inkscape.org/namespaces/inkscape",
@@ -529,16 +501,16 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            oy + h - 0.05,
-            ox + 0.05,
             ox + w - 0.05,
-            oy + h - 0.05,
+            -oy - 0.05, // svg中y轴向下递增
             ox + 0.05,
-            oy + h - 0.05,
+            -oy - 0.05,
             ox + 0.05,
-            oy + 0.05,
+            -(oy + h) - 0.05,
             ox + w - 0.05,
-            oy + 0.05
+            -(oy + h) - 0.05,
+            ox + w - 0.05,
+            -oy - 0.05,
         ),
     );
     writer.write_attribute("id", "outline0");
@@ -558,16 +530,16 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
+            ox + w + 0.05,
+            -(oy + h) + 0.05, // svg中y轴向下递增
+            ox + w + 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy + h + 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy - 0.05,
-            ox + w - 0.05,
-            oy - 0.05,
-            ox + w - 0.05,
-            oy + h + 0.05,
-            ox - 0.05,
-            oy + h + 0.05
+            -(oy + h) + 0.05,
+            ox + w + 0.05,
+            -(oy + h) + 0.05,
         ),
     );
     writer.write_attribute("id", "solder1");
@@ -580,10 +552,7 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     // main group
     writer.start_element("g");
     writer.write_attribute("clip-path", "url(#clipPath1)");
-    writer.write_attribute(
-        "transform",
-        &format!("scale(-1 1) translate(-{} 0)", 2.0 * ox + w),
-    );
+    writer.write_attribute("transform", "scale(1 1) translate(0 0)");
 
     writer.start_element("path");
     writer.write_attribute(
@@ -591,15 +560,15 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
             ox - 0.05,
-            oy + h + 0.05,
-            ox + w + 0.05,
-            oy + h + 0.05,
-            ox + w + 0.05,
-            oy - 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy - 0.05,
+            -(oy + h) + 0.05,
+            ox + w + 0.05,
+            -(oy + h) + 0.05,
+            ox + w + 0.05,
+            -oy + 0.05,
             ox - 0.05,
-            oy + h + 0.05
+            -oy + 0.05,
         ),
     );
     writer.write_attribute("fill", "#FFFFFF");
@@ -617,10 +586,10 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "transform",
         &format!(
             "matrix({} 0 0 {} {} {})",
-            -(w / image_w as f64),
+            w / image_w as f64,
             h / image_h as f64,
-            ox + w,
-            oy
+            ox,
+            -(oy + h)
         ),
     );
     writer.end_element(); // image
@@ -637,8 +606,8 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
 fn create_writer() -> XmlWriter {
     XmlWriter::new(Options {
         use_single_quote: false,
-        indent: Indent::None,
-        attributes_indent: Indent::None,
+        indent: Indent::Spaces(2),
+        attributes_indent: Indent::Spaces(2),
     })
 }
 
