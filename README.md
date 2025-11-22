@@ -63,6 +63,8 @@ Run the tool from your terminal, providing the necessary options.
 | `--output_path` | `-o`  | The path where the converted files will be saved.                                                       | `./output`  |
 | `--zip`         | `-z`  | If set to `true`, creates a ZIP archive of the output files.                                            | `false`     |
 | `--zip_name`    | `-n`  | The name of the generated ZIP file (without the `.zip` extension).                                      | `Gerber`    |
+| `--top_color_image` |     | Optional: path to a top-layer colorful silkscreen image (generates `Fabrication_ColorfulTopSilkscreen.FCTS`). | _None_ |
+| `--bottom_color_image` |  | Optional: path to a bottom-layer colorful silkscreen image (generates `Fabrication_ColorfulBottomSilkscreen.FCBS`). | _None_ |
 
 ### Example
 

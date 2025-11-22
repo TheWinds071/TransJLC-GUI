@@ -7,6 +7,7 @@
 
 // Public API modules
 pub mod archive;
+pub mod colorful;
 pub mod config;
 pub mod converter;
 pub mod error;

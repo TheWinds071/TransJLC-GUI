@@ -70,6 +70,22 @@ pub struct Config {
     /// Disable progress bars
     #[arg(long = "no-progress", help = "Disable progress indicators")]
     pub no_progress: bool,
+
+    /// Optional colorful silkscreen image for top layer
+    #[arg(
+        long = "top_color_image",
+        value_name = "PATH",
+        help = "Path to colorful silkscreen image for the top layer"
+    )]
+    pub top_color_image: Option<PathBuf>,
+
+    /// Optional colorful silkscreen image for bottom layer
+    #[arg(
+        long = "bottom_color_image",
+        value_name = "PATH",
+        help = "Path to colorful silkscreen image for the bottom layer"
+    )]
+    pub bottom_color_image: Option<PathBuf>,
 }
 
 impl Config {
@@ -123,6 +139,25 @@ impl Config {
             info!("Created output directory: {}", self.output_path.display());
         }
 
+        // Validate optional colorful silkscreen images
+        if let Some(path) = &self.top_color_image {
+            if !path.exists() {
+                return Err(anyhow!(
+                    "Top layer colorful silkscreen not found: {}",
+                    path.display()
+                ));
+            }
+        }
+
+        if let Some(path) = &self.bottom_color_image {
+            if !path.exists() {
+                return Err(anyhow!(
+                    "Bottom layer colorful silkscreen not found: {}",
+                    path.display()
+                ));
+            }
+        }
+
         info!("Configuration validation completed successfully");
         Ok(())
     }
@@ -164,6 +199,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: false,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         assert_eq!(config.get_eda_type(), EdaType::KiCad);
@@ -179,6 +216,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: false,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         assert_eq!(

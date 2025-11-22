@@ -65,6 +65,8 @@ fn create_test_config(input_path: PathBuf, output_path: PathBuf, eda: EdaType) -
         zip_name: "test".to_string(),
         verbose: false,
         no_progress: true, // Disable progress bars in tests
+        top_color_image: None,
+        bottom_color_image: None,
     }
 }
 
@@ -303,6 +305,8 @@ fn test_config_eda_type_parsing() {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: false,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         assert_eq!(config.get_eda_type(), expected);

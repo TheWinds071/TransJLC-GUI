@@ -34,6 +34,10 @@ pub enum LayerType {
     InnerLayer(u32), // Layer number
 
     // Other files
+    ColorfulTopSilkscreen,
+    ColorfulBottomSilkscreen,
+    ColorfulBoardOutline,
+    ColorfulBoardOutlineMark,
     Other,
 }
 
@@ -58,6 +62,18 @@ impl LayerType {
             LayerType::BoardOutline => "Gerber_BoardOutlineLayer.GKO".to_string(),
             LayerType::InnerLayer(num) => format!("Gerber_InnerLayer{}.G{}", num, num),
 
+            LayerType::ColorfulTopSilkscreen => {
+                "Fabrication_ColorfulTopSilkscreen.FCTS".to_string()
+            }
+            LayerType::ColorfulBottomSilkscreen => {
+                "Fabrication_ColorfulBottomSilkscreen.FCBS".to_string()
+            }
+            LayerType::ColorfulBoardOutline => {
+                "Fabrication_ColorfulBoardOutlineLayer.FCBO".to_string()
+            }
+            LayerType::ColorfulBoardOutlineMark => {
+                "Fabrication_ColorfulBoardOutlineMark.FCBM".to_string()
+            }
             LayerType::Other => "Unknown".to_string(),
         }
     }

@@ -5,6 +5,7 @@
 
 use crate::{
     archive::{ArchiveCreator, ArchiveExtractor},
+    colorful::{ColorfulOptions, ColorfulSilkscreenGenerator},
     config::{Config, EdaType},
     error::{Result, ResultExt, TransJlcError},
     gerber::GerberProcessor,
@@ -79,6 +80,10 @@ impl Converter {
         // Add required assets
         self.add_required_assets()
             .context("Failed to add required assets")?;
+
+        // Optional colorful silkscreen generation
+        self.generate_colorful_silkscreens()
+            .context("Failed to generate colorful silkscreen files")?;
 
         // Create final output
         self.create_output().context("Failed to create output")?;
@@ -378,6 +383,38 @@ impl Converter {
             output_format: if self.config.zip { "ZIP" } else { "Files" }.to_string(),
         }
     }
+
+    /// Generate colorful silkscreen outputs if requested
+    fn generate_colorful_silkscreens(&mut self) -> Result<()> {
+        if self.config.top_color_image.is_none() && self.config.bottom_color_image.is_none() {
+            return Ok(());
+        }
+
+        let Some(outline_path) = self.processed_files.get(&LayerType::BoardOutline) else {
+            return Err(TransJlcError::FileNotFound {
+                path: "Board outline (Gerber_BoardOutlineLayer.GKO) not found; required for colorful silkscreen".to_string(),
+            }
+            .into());
+        };
+
+        info!("Generating colorful silkscreen files");
+        let options = ColorfulOptions {
+            top_image: self.config.top_color_image.clone(),
+            bottom_image: self.config.bottom_color_image.clone(),
+        };
+
+        let generator = ColorfulSilkscreenGenerator::new(options);
+        let output_dir = self.get_working_output_dir();
+        let generated_files = generator
+            .generate(outline_path, &output_dir)
+            .with_path_context("generate colorful silkscreen", outline_path)?;
+
+        for (layer, path) in generated_files {
+            self.processed_files.insert(layer, path);
+        }
+
+        Ok(())
+    }
 }
 
 /// Statistics about the conversion process
@@ -403,6 +440,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: true,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         let converter = Converter::new(config);
@@ -419,6 +458,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: true,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         let converter = Converter::new(config);
@@ -438,6 +479,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: true,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         let converter = Converter::new(config);
@@ -463,6 +506,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: true,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         let mut converter = Converter::new(config);
@@ -500,6 +545,8 @@ mod tests {
             zip_name: "test".to_string(),
             verbose: false,
             no_progress: true,
+            top_color_image: None,
+            bottom_color_image: None,
         };
 
         let converter = Converter::new(config);

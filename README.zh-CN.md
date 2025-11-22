@@ -65,6 +65,8 @@ cargo install TransJLC
 | `--output_path` | `-o` | 转换后文件保存的路径。                                            | `./output`  |
 | `--zip`       | `-z` | 如果设置为 `true`，则会创建输出文件的 ZIP 归档。                  | `false`     |
 | `--zip_name`  | `-n` | 生成的 ZIP 文件的名称（不含 `.zip` 扩展名）。                     | `Gerber`    |
+| `--top_color_image` |    | 可选：顶层彩色丝印图片路径（生成 `Fabrication_ColorfulTopSilkscreen.FCTS`）。 | _无_ |
+| `--bottom_color_image` | | 可选：底层彩色丝印图片路径（生成 `Fabrication_ColorfulBottomSilkscreen.FCBS`）。 | _无_ |
 
 ### 使用示例
 
