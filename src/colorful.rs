@@ -225,7 +225,7 @@ fn mm_to_mil_10(val: f64) -> f64 {
 }
 
 fn compute_mark_points(bounds: &BoardBounds) -> Vec<(f64, f64)> {
-    // Inset by approximately 3 mil to mirror the original script behaviour.
+    // Inset by approximately 3 mil (0.0762mm) to mirror the original script behaviour.
     const INSET_MM: f64 = 0.0762;
     let min_x = bounds.min_x + INSET_MM;
     let max_x = bounds.max_x - INSET_MM;
@@ -236,26 +236,37 @@ fn compute_mark_points(bounds: &BoardBounds) -> Vec<(f64, f64)> {
 }
 
 fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
-    let ox = mm_to_mil_10(bounds.origin_x);
-    let oy = mm_to_mil_10(bounds.origin_y);
+    const CLIP_MARGIN: f64 = 0.8374; // shrink (10 mil units)
+    const EXPAND: f64 = 0.5; // expand (10 mil units)
+
+    let min_x = mm_to_mil_10(bounds.min_x);
+    let max_x = mm_to_mil_10(bounds.max_x);
+    // Y axis in the reference SVG is inverted: use -max_y as the min value and
+    // -min_y as the max value, while keeping width/height unchanged.
+    let min_y = -mm_to_mil_10(bounds.max_y);
+    let max_y = -mm_to_mil_10(bounds.min_y);
     let w = mm_to_mil_10(bounds.width);
     let h = mm_to_mil_10(bounds.height);
+    let center_x = min_x + w / 2.0;
     let image_w = image.width;
     let image_h = image.height;
+
+    let mark_points = compute_mark_points(bounds)
+        .iter()
+        .flat_map(|(x, y)| [mm_to_mil_10(*x).to_string(), mm_to_mil_10(*y).to_string()])
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let mut writer = create_writer();
 
     writer.start_element("svg");
     writer.write_attribute("width", &format!("{}mm", bounds.width));
     writer.write_attribute("height", &format!("{}mm", bounds.height));
-    writer.write_attribute("boardBox", &format!("{} {} {} {}", ox, oy + h, w, h));
-    writer.write_attribute("viewBox", &format!("{} {} {} {}", ox, oy + h, w, h));
+    writer.write_attribute("boardBox", &format!("{min_x} {min_y} {w} {h}"));
+    writer.write_attribute("viewBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("version", "1.1");
     writer.write_attribute("eda-version", "1.6(2025-08-27)");
-    writer.write_attribute(
-        "mark-points",
-        "-115.11024 -36.37008 -115.11024 154.48031000000003 193.85038999999998 154.48031",
-    );
+    writer.write_attribute("mark-points", &mark_points);
     writer.write_attribute(
         "xmlns:inkscape",
         "http://www.inkscape.org/namespaces/inkscape",
@@ -268,7 +279,7 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.write_attribute("xmlns", "http://www.w3.org/2000/svg");
     writer.write_attribute("xmlns:svg", "http://www.w3.org/2000/svg");
 
-    // defs/clipPath 0
+    // clipPath0 shrink
     writer.start_element("defs");
     writer.start_element("clipPath");
     writer.write_attribute("id", "clipPath0");
@@ -277,26 +288,26 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox + w - 0.05,
-            -oy - 0.05, // svg中y轴向下递增
-            ox + 0.05,
-            -oy - 0.05,
-            ox + 0.05,
-            -(oy + h) - 0.05,
-            ox + w - 0.05,
-            -(oy + h) - 0.05,
-            ox + w - 0.05,
-            -oy - 0.05,
+            max_x - CLIP_MARGIN,
+            max_y - CLIP_MARGIN,
+            min_x + CLIP_MARGIN,
+            max_y - CLIP_MARGIN,
+            min_x + CLIP_MARGIN,
+            min_y + CLIP_MARGIN,
+            max_x - CLIP_MARGIN,
+            min_y + CLIP_MARGIN,
+            max_x - CLIP_MARGIN,
+            max_y - CLIP_MARGIN
         ),
     );
     writer.write_attribute("id", "outline0");
     writer.write_attribute("stroke", "none");
     writer.write_attribute("style", "fill-opacity:1;fill-rule:nonzero;fill:block;");
-    writer.end_element(); // path
-    writer.end_element(); // clipPath
-    writer.end_element(); // defs
+    writer.end_element();
+    writer.end_element();
+    writer.end_element();
 
-    // defs/clipPath 1
+    // clipPath1 expand
     writer.start_element("defs");
     writer.start_element("clipPath");
     writer.write_attribute("id", "clipPath1");
@@ -306,31 +317,31 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox + w + 0.05,
-            -(oy + h) + 0.05, // svg中y轴向下递增
-            ox + w + 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -(oy + h) + 0.05,
+            max_x + EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            min_y - EXPAND
         ),
     );
     writer.write_attribute("id", "solder1");
     writer.write_attribute("stroke", "none");
     writer.write_attribute("style", "fill-opacity:1;fill-rule:nonzero;fill:block;");
-    writer.end_element(); // path
-    writer.end_element(); // clipPath
-    writer.end_element(); // defs
+    writer.end_element();
+    writer.end_element();
+    writer.end_element();
 
-    // main group
+    // main group (mirrored)
     writer.start_element("g");
     writer.write_attribute("clip-path", "url(#clipPath1)");
     writer.write_attribute(
         "transform",
-        &format!("scale(-1 1) translate({} 0)", -((oy + h) / 2f64)),
+        &format!("scale(-1 1) translate({} 0)", -2.0 * center_x),
     );
 
     writer.start_element("path");
@@ -338,23 +349,23 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox - 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -oy + 0.05,
+            min_x - EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            max_y + EXPAND
         ),
     );
     writer.write_attribute("fill", "#FFFFFF");
     writer.write_attribute("stroke", "none");
     writer.write_attribute("stroke-width", "0");
     writer.write_attribute("id", "background");
-    writer.end_element(); // path
+    writer.end_element();
 
     writer.start_element("image");
     writer.write_attribute("width", &image_w.to_string());
@@ -367,8 +378,8 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
             "matrix({} 0 0 {} {} {})",
             -(w / image_w as f64),
             h / image_h as f64,
-            h,
-            -(oy + h)
+            max_x,
+            min_y
         ),
     );
     writer.end_element(); // image
@@ -460,26 +471,35 @@ fn format_coord(x_mm: f64, y_mm: f64) -> (String, String) {
 }
 
 fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
-    let ox = mm_to_mil_10(bounds.origin_x);
-    let oy = mm_to_mil_10(bounds.origin_y);
+    const CLIP_MARGIN: f64 = 0.8374; // in 10-mil units
+    const EXPAND: f64 = 0.5; // in 10-mil units
+
+    // Convert mm to 10-mil units (as used by sample SVGs)
+    let min_x = mm_to_mil_10(bounds.min_x);
+    let max_x = mm_to_mil_10(bounds.max_x);
+    let min_y = -mm_to_mil_10(bounds.max_y);
+    let max_y = -mm_to_mil_10(bounds.min_y);
     let w = mm_to_mil_10(bounds.width);
     let h = mm_to_mil_10(bounds.height);
     let image_w = image.width;
     let image_h = image.height;
+
+    let mark_points = compute_mark_points(bounds)
+        .iter()
+        .flat_map(|(x, y)| [mm_to_mil_10(*x).to_string(), mm_to_mil_10(*y).to_string()])
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let mut writer = create_writer();
 
     writer.start_element("svg");
     writer.write_attribute("width", &format!("{}mm", bounds.width));
     writer.write_attribute("height", &format!("{}mm", bounds.height));
-    writer.write_attribute("boardBox", &format!("{} {} {} {}", ox, -(oy + h), w, h));
-    writer.write_attribute("viewBox", &format!("{} {} {} {}", ox, -(oy + h), w, h));
+    writer.write_attribute("boardBox", &format!("{min_x} {min_y} {w} {h}"));
+    writer.write_attribute("viewBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("version", "1.1");
     writer.write_attribute("eda-version", "1.6(2025-08-27)");
-    writer.write_attribute(
-        "mark-points",
-        "-115.11024 -36.37008 -115.11024 154.48031000000003 193.85038999999998 154.48031",
-    );
+    writer.write_attribute("mark-points", &mark_points);
     writer.write_attribute(
         "xmlns:inkscape",
         "http://www.inkscape.org/namespaces/inkscape",
@@ -492,7 +512,6 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.write_attribute("xmlns", "http://www.w3.org/2000/svg");
     writer.write_attribute("xmlns:svg", "http://www.w3.org/2000/svg");
 
-    // defs/clipPath 0
     writer.start_element("defs");
     writer.start_element("clipPath");
     writer.write_attribute("id", "clipPath0");
@@ -501,16 +520,16 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox + w - 0.05,
-            -oy - 0.05, // svg中y轴向下递增
-            ox + 0.05,
-            -oy - 0.05,
-            ox + 0.05,
-            -(oy + h) - 0.05,
-            ox + w - 0.05,
-            -(oy + h) - 0.05,
-            ox + w - 0.05,
-            -oy - 0.05,
+            max_x - CLIP_MARGIN,
+            max_y - CLIP_MARGIN,
+            min_x + CLIP_MARGIN,
+            max_y - CLIP_MARGIN,
+            min_x + CLIP_MARGIN,
+            min_y + CLIP_MARGIN,
+            max_x - CLIP_MARGIN,
+            min_y + CLIP_MARGIN,
+            max_x - CLIP_MARGIN,
+            max_y - CLIP_MARGIN
         ),
     );
     writer.write_attribute("id", "outline0");
@@ -520,7 +539,6 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.end_element(); // clipPath
     writer.end_element(); // defs
 
-    // defs/clipPath 1
     writer.start_element("defs");
     writer.start_element("clipPath");
     writer.write_attribute("id", "clipPath1");
@@ -530,26 +548,25 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox + w + 0.05,
-            -(oy + h) + 0.05, // svg中y轴向下递增
-            ox + w + 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -(oy + h) + 0.05,
+            max_x + EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            min_y - EXPAND
         ),
     );
     writer.write_attribute("id", "solder1");
     writer.write_attribute("stroke", "none");
-    writer.write_attribute("style", "fill-opacity:1;fill-rule:nonzero;fill:block");
+    writer.write_attribute("style", "fill-opacity:1;fill-rule:nonzero;fill:block;");
     writer.end_element(); // path
     writer.end_element(); // clipPath
     writer.end_element(); // defs
 
-    // main group
     writer.start_element("g");
     writer.write_attribute("clip-path", "url(#clipPath1)");
     writer.write_attribute("transform", "scale(1 1) translate(0 0)");
@@ -559,16 +576,16 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
         "d",
         &format!(
             "M {} {} L {} {} {} {} {} {} {} {} ",
-            ox - 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -(oy + h) + 0.05,
-            ox + w + 0.05,
-            -oy + 0.05,
-            ox - 0.05,
-            -oy + 0.05,
+            min_x - EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            min_y - EXPAND,
+            max_x + EXPAND,
+            max_y + EXPAND,
+            min_x - EXPAND,
+            max_y + EXPAND
         ),
     );
     writer.write_attribute("fill", "#FFFFFF");
@@ -577,19 +594,19 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.write_attribute("id", "background");
     writer.end_element(); // path
 
-    writer.start_element("image");
-    writer.write_attribute("width", &image_w.to_string());
-    writer.write_attribute("height", &image_h.to_string());
-    writer.write_attribute("preserveAspectRatio", "none");
-    writer.write_attribute("xlink:href", &image.data_uri);
-    writer.write_attribute(
-        "transform",
-        &format!(
+  writer.start_element("image");
+  writer.write_attribute("width", &image_w.to_string());
+  writer.write_attribute("height", &image_h.to_string());
+  writer.write_attribute("preserveAspectRatio", "none");
+  writer.write_attribute("xlink:href", &image.data_uri);
+  writer.write_attribute(
+      "transform",
+      &format!(
             "matrix({} 0 0 {} {} {})",
             w / image_w as f64,
             h / image_h as f64,
-            ox,
-            -(oy + h)
+            min_x,
+            min_y
         ),
     );
     writer.end_element(); // image
