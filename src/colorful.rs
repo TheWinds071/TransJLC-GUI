@@ -109,14 +109,24 @@ impl ColorfulSilkscreenGenerator {
 /// Board outline bounds expressed in millimeters.
 #[derive(Debug, Clone, Copy)]
 struct BoardBounds {
-    origin_x: f64,
-    origin_y: f64,
-    width: f64,
-    height: f64,
     min_x: f64,
     max_x: f64,
     min_y: f64,
     max_y: f64,
+}
+
+impl BoardBounds {
+    fn width(&self) -> f64 {
+        self.max_x - self.min_x
+    }
+
+    fn height(&self) -> f64 {
+        self.max_y - self.min_y
+    }
+
+    fn origin(&self) -> (f64, f64) {
+        (self.min_x, self.min_y)
+    }
 }
 
 fn parse_outline_bounds(content: &str) -> Result<BoardBounds> {
@@ -176,14 +186,7 @@ fn parse_outline_bounds(content: &str) -> Result<BoardBounds> {
         bail!("Failed to parse board outline bounds");
     }
 
-    let width = max_x - min_x;
-    let height = max_y - min_y;
-
     Ok(BoardBounds {
-        origin_x: min_x,
-        origin_y: min_y,
-        width,
-        height,
         min_x,
         max_x,
         min_y,
@@ -245,8 +248,8 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     // -min_y as the max value, while keeping width/height unchanged.
     let min_y = -mm_to_mil_10(bounds.max_y);
     let max_y = -mm_to_mil_10(bounds.min_y);
-    let w = mm_to_mil_10(bounds.width);
-    let h = mm_to_mil_10(bounds.height);
+    let w = mm_to_mil_10(bounds.width());
+    let h = mm_to_mil_10(bounds.height());
     let center_x = min_x + w / 2.0;
     let image_w = image.width;
     let image_h = image.height;
@@ -260,8 +263,8 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     let mut writer = create_writer();
 
     writer.start_element("svg");
-    writer.write_attribute("width", &format!("{}mm", bounds.width));
-    writer.write_attribute("height", &format!("{}mm", bounds.height));
+    writer.write_attribute("width", &format!("{}mm", bounds.width()));
+    writer.write_attribute("height", &format!("{}mm", bounds.height()));
     writer.write_attribute("boardBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("viewBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("version", "1.1");
@@ -394,15 +397,16 @@ fn build_bottom_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
 }
 
 fn build_board_outline_svg(bounds: &BoardBounds) -> String {
-    let ox = mm_to_mil_10(bounds.origin_x);
-    let oy = mm_to_mil_10(bounds.origin_y);
-    let w = mm_to_mil_10(bounds.width);
-    let h = mm_to_mil_10(bounds.height);
+    let (origin_x, origin_y) = bounds.origin();
+    let ox = mm_to_mil_10(origin_x);
+    let oy = mm_to_mil_10(origin_y);
+    let w = mm_to_mil_10(bounds.width());
+    let h = mm_to_mil_10(bounds.height());
 
     let mut writer = create_writer();
     writer.start_element("svg");
-    writer.write_attribute("width", &format!("{}mm", bounds.width));
-    writer.write_attribute("height", &format!("{}mm", bounds.height));
+    writer.write_attribute("width", &format!("{}mm", bounds.width()));
+    writer.write_attribute("height", &format!("{}mm", bounds.height()));
     writer.write_attribute("viewBox", &format!("{ox} {oy} {w} {h}"));
     writer.write_attribute("version", "1.1");
     writer.write_attribute("xmlns", "http://www.w3.org/2000/svg");
@@ -479,8 +483,8 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     let max_x = mm_to_mil_10(bounds.max_x);
     let min_y = -mm_to_mil_10(bounds.max_y);
     let max_y = -mm_to_mil_10(bounds.min_y);
-    let w = mm_to_mil_10(bounds.width);
-    let h = mm_to_mil_10(bounds.height);
+    let w = mm_to_mil_10(bounds.width());
+    let h = mm_to_mil_10(bounds.height());
     let image_w = image.width;
     let image_h = image.height;
 
@@ -493,8 +497,8 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     let mut writer = create_writer();
 
     writer.start_element("svg");
-    writer.write_attribute("width", &format!("{}mm", bounds.width));
-    writer.write_attribute("height", &format!("{}mm", bounds.height));
+    writer.write_attribute("width", &format!("{}mm", bounds.width()));
+    writer.write_attribute("height", &format!("{}mm", bounds.height()));
     writer.write_attribute("boardBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("viewBox", &format!("{min_x} {min_y} {w} {h}"));
     writer.write_attribute("version", "1.1");
@@ -594,14 +598,14 @@ fn build_top_svg(bounds: &BoardBounds, image: &SilkscreenImage) -> String {
     writer.write_attribute("id", "background");
     writer.end_element(); // path
 
-  writer.start_element("image");
-  writer.write_attribute("width", &image_w.to_string());
-  writer.write_attribute("height", &image_h.to_string());
-  writer.write_attribute("preserveAspectRatio", "none");
-  writer.write_attribute("xlink:href", &image.data_uri);
-  writer.write_attribute(
-      "transform",
-      &format!(
+    writer.start_element("image");
+    writer.write_attribute("width", &image_w.to_string());
+    writer.write_attribute("height", &image_h.to_string());
+    writer.write_attribute("preserveAspectRatio", "none");
+    writer.write_attribute("xlink:href", &image.data_uri);
+    writer.write_attribute(
+        "transform",
+        &format!(
             "matrix({} 0 0 {} {} {})",
             w / image_w as f64,
             h / image_h as f64,
