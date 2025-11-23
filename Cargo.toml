@@ -1,11 +1,11 @@
 [package]
 name = "TransJLC"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["HalfSweet <HalfSweet@HalfSweet.cn>"]
 edition = "2021"
 repository = "https://github.com/HalfSweet/TransJLC"
 
-license = "MIT"
+license = "Apache-2.0"
 description = "TransJLC is a tool for converting Gerber files from other EDAs to JLCEDA style"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
