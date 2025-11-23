@@ -401,6 +401,11 @@ impl Converter {
         let options = ColorfulOptions {
             top_image: self.config.top_color_image.clone(),
             bottom_image: self.config.bottom_color_image.clone(),
+            top_solder_mask: self.processed_files.get(&LayerType::TopSoldermask).cloned(),
+            bottom_solder_mask: self
+                .processed_files
+                .get(&LayerType::BottomSoldermask)
+                .cloned(),
         };
 
         let generator = ColorfulSilkscreenGenerator::new(options);
