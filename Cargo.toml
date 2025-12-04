@@ -33,5 +33,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 xmlwriter = "0.1"
 gerber_parser = "0.3"
 gerber-types = "0.6"
+eframe = "0.29"
+rfd = "0.15"
 
 [dev-dependencies]
