@@ -50,6 +50,11 @@ cargo install TransJLC
     ```bash
     cargo build --release
     ```
+    
+    构建GUI
+    ```bash
+    cargo run --release --bin transjlc-gui
+    ```
     可执行文件将位于 `target/release/TransJLC`。
 
 ## 🚀 使用方法
